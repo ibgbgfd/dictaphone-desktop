@@ -1,0 +1,18 @@
+﻿{
+  "sample_rate": 48000,
+  "channels": 1,
+  "audio_codec": "libopus",
+  "bitrate": 64000,
+  "device_index": -1,
+  "http_host": "0.0.0.0",
+  "http_port": 8765,
+  "upload_url": "https://example.com/api/webhook/recording",
+  "auto_upload": true,
+  "max_upload_retries": 5,
+  "verify_ssl": false,
+  "recordings_dir": "",
+  "max_storage_days": 30,
+  "minimize_to_tray": true,
+  "start_minimized": false,
+  "autostart_enabled": false
+}

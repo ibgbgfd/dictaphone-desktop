@@ -1,0 +1,37 @@
+﻿# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller & Build artifacts
+build/
+dist/
+*.spec
+
+# Local user configurations & logs
+config.json
+crash.log
+*.log
+
+# Recordings & Database (Local storage)
+recordings/
+recordings.db
+*.webm
+*.wav
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,7 @@
+PyQt6>=6.6.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+av>=11.0.0
+requests>=2.31.0
+pyinstaller>=6.4.0
+pillow>=10.0.0
