@@ -248,6 +248,21 @@ class AudioRecorder:
         if not self.is_recording or self.is_paused:
             return
 
+        # Audio level (VU meter RMS)
+        if self.on_level:
+            try:
+                rms = np.sqrt(np.mean(indata**2))
+                if rms > 1e-5:
+                    import math
+                    db = 20 * math.log10(rms)
+                    # Map -50 dB -> 0.0, 0 dB -> 1.0
+                    norm_level = max(0.0, min(1.0, (db + 50.0) / 50.0))
+                else:
+                    norm_level = 0.0
+                self.on_level(norm_level)
+            except Exception:
+                pass
+
         # Queue audio block for encoding
         try:
             self._audio_queue.put_nowait(indata.copy())
@@ -344,6 +359,12 @@ class AudioRecorder:
             self._container = None
             self._av_stream = None
 
+        if self.on_level:
+            try:
+                self.on_level(0.0)
+            except Exception:
+                pass
+
         return duration
 
     def cleanup(self) -> None:
@@ -362,3 +383,9 @@ class AudioRecorder:
             except Exception:
                 pass
             self._container = None
+
+        if self.on_level:
+            try:
+                self.on_level(0.0)
+            except Exception:
+                pass

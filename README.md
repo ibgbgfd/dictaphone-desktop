@@ -44,8 +44,15 @@ dictaphone-desktop/
 ├── main.py                 # Точка входа в приложение и синглтон-контроллер
 ├── requirements.txt        # Список зависимостей Python
 ├── run.bat                 # Быстрый запуск приложения из исходников
+├── session_validator.py    # Централизованная валидация сессий и полей (id, title)
 ├── single_instance.py      # Контроль единого запущенного экземпляра
-└── uploader.py             # Фоновый воркер отправки multipart/form-data
+├── uploader.py             # Фоновый воркер отправки multipart/form-data
+├── data.json               # Пример тестового пакета сессии совещания из ТЗ
+├── run_test.bat            # Запуск полного набора тестов в один клик
+├── test_error_handling.py  # Автоматические тесты валидации и обработки ошибок REST API
+├── test_e2e_pipeline.py    # Сквозной интеграционный тест приема и выгрузки аудио
+├── test_http_client.py     # Тестовый CLI клиент для REST API
+└── test_webhook_server.py  # Локальный вебхук-сервер для проверки выгрузок
 ```
 
 ---

@@ -1,7 +1,9 @@
 import json
 import threading
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Optional, Dict, Any, List, Tuple
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+
+from session_validator import validate_session_data, EXAMPLE_SESSION_PAYLOAD
 
 
 class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
@@ -87,13 +89,16 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
 
             # 1. Быстрая проверка команд остановки записи и показа окна по URL (не требуют обязательного тела)
             if normalized_path in ("/stop", "/api/stop"):
+                is_currently_recording = self.server.wrapper.is_recording_func()
                 if self.server.wrapper.on_stop_requested:
                     self.server.wrapper.on_stop_requested()
                 print("[REST API] Получена команда остановки записи (POST /stop)")
                 self._send_json_response(200, {
                     "status": "ok",
                     "code": 200,
-                    "message": "Команда остановки записи успешно выполнена"
+                    "is_recording": False,
+                    "was_recording": is_currently_recording,
+                    "message": "Команда остановки записи успешно выполнена" if is_currently_recording else "Запись звука не была активна (рекордер в режиме ожидания)"
                 })
                 return
 
@@ -115,7 +120,18 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                     "status": "error",
                     "code": 400,
                     "error": "EMPTY_BODY",
-                    "message": "Тело запроса пустое. Отправьте JSON с метаданными сессии (id, title)."
+                    "message": "Тело запроса пустое. Отправьте JSON пакет с обязательными полями 'id' (идентификатор) и 'title' (название конференции/совещания).",
+                    "example": EXAMPLE_SESSION_PAYLOAD
+                })
+                return
+
+            # Защита от избыточно больших пакетов (лимит 10 МБ)
+            if content_length > 10 * 1024 * 1024:
+                self._send_json_response(413, {
+                    "status": "error",
+                    "code": 413,
+                    "error": "PAYLOAD_TOO_LARGE",
+                    "message": "Размер тела запроса превышает допустимый лимит (10 МБ)."
                 })
                 return
 
@@ -125,7 +141,8 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                     "status": "error",
                     "code": 400,
                     "error": "EMPTY_BODY",
-                    "message": "Тело запроса пустое. Отправьте JSON с метаданными сессии (id, title)."
+                    "message": "Тело запроса содержит только пробельные символы. Отправьте валидный JSON с метаданными сессии.",
+                    "example": EXAMPLE_SESSION_PAYLOAD
                 })
                 return
 
@@ -137,7 +154,7 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                     "status": "error",
                     "code": 400,
                     "error": "ENCODING_ERROR",
-                    "message": f"Ошибка кодировки. Ожидается UTF-8: {ue}"
+                    "message": f"Ошибка кодировки. Тело запроса должно быть в кодировке UTF-8: {ue}"
                 })
                 return
             except json.JSONDecodeError as je:
@@ -145,7 +162,10 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                     "status": "error",
                     "code": 400,
                     "error": "INVALID_JSON_SYNTAX",
-                    "message": f"Синтаксическая ошибка в JSON (строка {je.lineno}, колонка {je.colno}): {je.msg}"
+                    "line": je.lineno,
+                    "column": je.colno,
+                    "message": f"Синтаксическая ошибка в JSON (строка {je.lineno}, колонка {je.colno}): {je.msg}. Проверьте правильность скобок, кавычек и запятых.",
+                    "example": EXAMPLE_SESSION_PAYLOAD
                 })
                 return
 
@@ -155,19 +175,23 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                     "status": "error",
                     "code": 400,
                     "error": "INVALID_JSON_STRUCTURE",
-                    "message": f"Ожидался JSON объект {...}, получен тип {type(data).__name__}"
+                    "message": f"Корневой элемент JSON должен быть объектом {{...}}, а передан: {type(data).__name__}.",
+                    "example": EXAMPLE_SESSION_PAYLOAD
                 })
                 return
 
             # 2. Проверка команд через JSON body {"command": "stop"} или {"command": "show"}
             if data.get("command") == "stop" or data.get("action") == "stop":
+                is_currently_recording = self.server.wrapper.is_recording_func()
                 if self.server.wrapper.on_stop_requested:
                     self.server.wrapper.on_stop_requested()
                 print("[REST API] Получена команда остановки записи (через JSON payload)")
                 self._send_json_response(200, {
                     "status": "ok",
                     "code": 200,
-                    "message": "Команда остановки записи успешно выполнена"
+                    "is_recording": False,
+                    "was_recording": is_currently_recording,
+                    "message": "Команда остановки записи успешно выполнена" if is_currently_recording else "Запись звука не была активна (рекордер в режиме ожидания)"
                 })
                 return
 
@@ -182,35 +206,34 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                 })
                 return
 
-            # 3. Обработка старта сессии (POST /start, /session, /meeting, корень / или если в JSON переданы id и title)
+            # 3. Обработка старта сессии (POST /start, /session, /meeting, корень /)
             is_start_path = normalized_path in ("/", "/start", "/api/start", "/session", "/api/session", "/meeting", "/api/meeting")
-            has_session_payload = "id" in data and "title" in data
 
-            if is_start_path or has_session_payload:
-                # Валидация на пустой объект
-                if not data:
-                    self._send_json_response(422, {
+            if is_start_path:
+                is_valid, err_msg, normalized_data, missing_fields = validate_session_data(data)
+
+                if not is_valid:
+                    if not data:
+                        status_code = 422
+                        err_code = "EMPTY_JSON_OBJECT"
+                    elif missing_fields:
+                        status_code = 400
+                        err_code = "MISSING_REQUIRED_FIELDS"
+                    else:
+                        status_code = 400
+                        err_code = "INVALID_PAYLOAD"
+
+                    self._send_json_response(status_code, {
                         "status": "error",
-                        "code": 422,
-                        "error": "UNPROCESSABLE_ENTITY",
-                        "message": "Передан пустой JSON объект {}. Заполните обязательные поля 'id' и 'title'."
-                    })
-                    return
-
-                # Валидация обязательных полей
-                missing_fields = []
-                if "id" not in data or not str(data.get("id", "")).strip():
-                    missing_fields.append("id")
-                if "title" not in data or not str(data.get("title", "")).strip():
-                    missing_fields.append("title")
-
-                if missing_fields:
-                    self._send_json_response(400, {
-                        "status": "error",
-                        "code": 400,
-                        "error": "MISSING_REQUIRED_FIELDS",
+                        "code": status_code,
+                        "error": err_code,
                         "missing_fields": missing_fields,
-                        "message": f"Отсутствуют обязательные поля в JSON пакете: {', '.join(missing_fields)}"
+                        "message": err_msg,
+                        "required_fields": {
+                            "id": "Идентификатор сессии/конференции (например: 'совещание_312')",
+                            "title": "Название конференции или тема совещания (например: 'Обсуждение архитектуры проекта')"
+                        },
+                        "example": EXAMPLE_SESSION_PAYLOAD
                     })
                     return
 
@@ -222,35 +245,27 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                         "code": "BUSY",
                         "status_code": 409,
                         "error": "RECORDER_BUSY",
-                        "message": "Сервер занят: в данный момент уже идет сессия записи аудио. Отправьте POST /stop для завершения."
+                        "active_recording": True,
+                        "message": "Сервер занят: в данный момент уже идет сессия записи аудио. Отправьте POST /stop для завершения текущей сессии перед началом новой."
                     })
                     return
 
-                # Нормализация структуры данных сессии
-                if "participants" not in data:
-                    data["participants"] = []
-                elif isinstance(data["participants"], str):
-                    data["participants"] = [p.strip() for p in data["participants"].split(",") if p.strip()]
-
-                if "agenda" not in data:
-                    data["agenda"] = []
-
-                print(f"[REST API] Принята новая сессия: id='{data.get('id')}', title='{data.get('title')}'")
+                print(f"[REST API] Принята новая сессия: id='{normalized_data['id']}', title='{normalized_data['title']}'")
                 
                 # Запуск записи в приложении через callback
                 if self.server.wrapper.on_session_received:
-                    self.server.wrapper.on_session_received(data)
+                    self.server.wrapper.on_session_received(normalized_data)
 
                 # Ответ 200 OK при успешном получении JSON
                 self._send_json_response(200, {
                     "status": "ok",
                     "code": 200,
                     "message": "Метаданные сессии успешно приняты. Запись звука запущена.",
-                    "id": data.get("id"),
-                    "title": data.get("title"),
-                    "date": data.get("date"),
-                    "participants_count": len(data.get("participants", [])),
-                    "agenda_count": len(data.get("agenda", []))
+                    "id": normalized_data["id"],
+                    "title": normalized_data["title"],
+                    "date": normalized_data["date"],
+                    "participants_count": len(normalized_data.get("participants", [])),
+                    "agenda_count": len(normalized_data.get("agenda", []))
                 })
                 return
 
@@ -259,7 +274,7 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                 "status": "error",
                 "code": 404,
                 "error": "NOT_FOUND",
-                "message": f"Неизвестный POST эндпоинт: {self.path}. Используйте POST /start для запуска или POST /stop для остановки."
+                "message": f"Неизвестный POST эндпоинт: '{self.path}'. Используйте POST /start для старта сессии или POST /stop для остановки."
             })
 
         except Exception as e:

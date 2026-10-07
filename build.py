@@ -22,6 +22,7 @@ def build():
         "--collect-all=av",
         "--hidden-import=PyQt6",
         "--hidden-import=requests",
+        "--hidden-import=session_validator",
     ]
 
     print("[Build] Параметры PyInstaller:", " ".join(args))

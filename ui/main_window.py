@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QSystemTrayIcon, QMenu, QMessageBox, QGroupBox,
-    QAbstractItemView, QStatusBar, QFileDialog,
+    QAbstractItemView, QStatusBar, QFileDialog, QProgressBar,
     QTabWidget, QListWidget, QSplitter
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
@@ -22,10 +22,12 @@ from audio_recorder import AudioRecorder
 from ui.settings_dialog import SettingsDialog
 from http_server import RESTServer
 from uploader import UploadWorker
+from session_validator import validate_session_data, EXAMPLE_SESSION_PAYLOAD
 
 
 class RecorderBridge(QObject):
     """Потокобезопасный мост сигналов между аудио-потоками, REST-сервером и UI."""
+    level_updated = pyqtSignal(float)
     error_occurred = pyqtSignal(str)
     session_received = pyqtSignal(dict)
     stop_requested = pyqtSignal()
@@ -49,6 +51,7 @@ class MainWindow(QMainWindow):
 
         # Сигнальный мост
         self.bridge = RecorderBridge()
+        self.bridge.level_updated.connect(self._on_audio_level)
         self.bridge.error_occurred.connect(self._on_audio_error)
         self.bridge.session_received.connect(self._on_session_received)
         self.bridge.stop_requested.connect(self._on_stop_requested)
@@ -218,6 +221,33 @@ class MainWindow(QMainWindow):
         ctrl_layout = QVBoxLayout(ctrl_group)
         ctrl_layout.setContentsMargins(12, 10, 12, 10)
         ctrl_layout.setSpacing(6)
+
+        # Графический индикатор активности микрофона (ТЗ п. 3)
+        level_row = QHBoxLayout()
+        level_row.setSpacing(10)
+        level_lbl = QLabel("Микрофон:")
+        level_lbl.setFixedWidth(90)
+        level_row.addWidget(level_lbl)
+
+        self.level_bar = QProgressBar()
+        self.level_bar.setRange(0, 100)
+        self.level_bar.setValue(0)
+        self.level_bar.setTextVisible(False)
+        self.level_bar.setFixedHeight(12)
+        self.level_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #3f3f46;
+                border-radius: 3px;
+                background-color: #27272a;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #22c55e, stop:0.7 #84cc16, stop:0.85 #eab308, stop:1.0 #ef4444);
+                border-radius: 2px;
+            }
+        """)
+        level_row.addWidget(self.level_bar, 1)
+        ctrl_layout.addLayout(level_row)
 
         # Таймер и кнопка управления записью
         bottom_row = QHBoxLayout()
@@ -491,7 +521,16 @@ class MainWindow(QMainWindow):
             self._stop_recording()
 
     def _load_json_file(self) -> None:
-        """Тестовая загрузка JSON из файла."""
+        """Тестовая загрузка JSON из файла с проверками и ответами на ошибки пользователя."""
+        if self._is_recording_active():
+            QMessageBox.warning(
+                self,
+                "Запись активна",
+                "Невозможно загрузить новую сессию во время активной записи аудио.\n\n"
+                "Сначала остановите текущую запись кнопкой «Остановить запись»."
+            )
+            return
+
         base_dir = Path(__file__).resolve().parent.parent
         default_file = base_dir / "data.json"
         start_path = str(default_file if default_file.exists() else base_dir)
@@ -507,20 +546,84 @@ class MainWindow(QMainWindow):
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            self._on_session_received(data)
+                content = f.read()
+        except UnicodeDecodeError:
+            try:
+                with open(file_path, "r", encoding="cp1251") as f:
+                    content = f.read()
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка кодировки", f"Не удалось прочитать файл. Ожидается кодировка UTF-8:\n{e}")
+                return
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Не удалось прочитать файл JSON:\n{e}")
+            QMessageBox.critical(self, "Ошибка чтения", f"Не удалось прочитать выбранный файл:\n{e}")
+            return
+
+        if not content.strip():
+            QMessageBox.warning(
+                self,
+                "Пустой файл",
+                "Выбранный JSON файл пуст.\n\n"
+                "Укажите корректный файл совещания с обязательными полями 'id' и 'title'."
+            )
+            return
+
+        try:
+            raw_data = json.loads(content)
+        except json.JSONDecodeError as je:
+            QMessageBox.critical(
+                self,
+                "Синтаксическая ошибка JSON",
+                f"Ошибка в синтаксисе JSON файла:\n\n"
+                f"Строка: {je.lineno}, Позиция: {je.colno}\n"
+                f"Сообщение: {je.msg}\n\n"
+                f"Проверьте правильность скобок, кавычек и запятых в JSON."
+            )
+            return
+
+        is_valid, err_msg, normalized_data, missing_fields = validate_session_data(raw_data)
+        if not is_valid:
+            example_str = json.dumps(EXAMPLE_SESSION_PAYLOAD, ensure_ascii=False, indent=2)
+            QMessageBox.critical(
+                self,
+                "Ошибка валидации сессии",
+                f"{err_msg}\n\n"
+                f"Пример корректного формата JSON:\n{example_str}"
+            )
+            return
+
+        # Передаем валидированные данные в UI
+        self._on_session_received(normalized_data)
 
     # ===============================================================
     # Управление записью звука (WebM Opus)
     # ===============================================================
     def _manual_start_recording(self) -> None:
         self._purge_old_files()
-        if not self.title_input.text().strip():
-            self.title_input.setText(f"Запись {datetime.now().strftime('%d.%m.%Y %H:%M')}")
-        if not self.date_input.text().strip():
-            self.date_input.setText(datetime.now().strftime("%d/%m/%Y %H:%M"))
+        
+        now = datetime.now()
+        title = self.title_input.text().strip()
+        if not title:
+            title = f"Совещание от {now.strftime('%d.%m.%Y %H:%M')}"
+            self.title_input.setText(title)
+
+        date_val = self.date_input.text().strip()
+        if not date_val:
+            date_val = now.strftime("%d/%m/%Y %H:%M")
+            self.date_input.setText(date_val)
+
+        id_val = self.id_input.text().strip()
+        if not id_val:
+            id_val = f"совещание_{now.strftime('%Y%m%d_%H%M%S')}"
+            self.id_input.setText(id_val)
+
+        self.pending_session_id = id_val
+        self.current_meeting_data = {
+            "id": id_val,
+            "title": title,
+            "date": date_val,
+            "participants": [self.participants_list.item(i).text() for i in range(self.participants_list.count())],
+            "agenda": []
+        }
         self._start_recording()
 
     def _start_recording(self) -> None:
@@ -541,11 +644,26 @@ class MainWindow(QMainWindow):
             codec_name=self.config.audio_codec,
             bitrate=self.config.bitrate,
             device_index=dev_index,
+            on_level_callback=lambda lvl: self.bridge.level_updated.emit(lvl),
             on_error_callback=lambda err: self.bridge.error_occurred.emit(err)
         )
 
         ok = self.recorder.start_recording(filepath)
         if not ok:
+            self._set_status_text("Ошибка аудиоустройства")
+            self._update_record_button_ui(is_recording=False)
+            self.load_json_btn.setEnabled(True)
+            self.settings_btn.setEnabled(True)
+            self.level_bar.setValue(0)
+            QMessageBox.critical(
+                self,
+                "Ошибка микрофона",
+                "Не удалось запустить запись звука с микрофона.\n\n"
+                "Возможные причины:\n"
+                "• Микрофон не подключен или занят другим процессом\n"
+                "• Выбрано некорректное устройство в Настройках\n\n"
+                "Проверьте настройки звука в окне «Настройки» -> «Аудио»."
+            )
             return
 
         session_id = self.pending_session_id or f"rec_{now_str}"
@@ -662,6 +780,18 @@ class MainWindow(QMainWindow):
     # Отправка данных на сервер (HTTP POST multipart/form-data)
     # ===============================================================
     def _trigger_upload(self, rec_id: int, audio_path: str, json_path: str) -> None:
+        if not audio_path or not Path(audio_path).exists():
+            self.db.update_recording(rec_id, status=STATUS_NOT_SENT)
+            self._refresh_history()
+            self._set_status_text("Ошибка: файл не найден")
+            QMessageBox.critical(
+                self,
+                "Файл не найден",
+                f"Аудиофайл не найден на локальном диске:\n{audio_path}\n\n"
+                f"Возможно, файл был перемещен или удален."
+            )
+            return
+
         if not self.config.upload_url:
             self.db.update_recording(rec_id, status=STATUS_NOT_SENT)
             self._refresh_history()
@@ -807,6 +937,12 @@ class MainWindow(QMainWindow):
                     border: 1px solid #3f3f46;
                 }
             """)
+            if hasattr(self, 'level_bar'):
+                self.level_bar.setValue(0)
+
+    def _on_audio_level(self, level: float) -> None:
+        percent = int(level * 100)
+        self.level_bar.setValue(percent)
 
     def _on_audio_error(self, message: str) -> None:
         self._stop_recording()
