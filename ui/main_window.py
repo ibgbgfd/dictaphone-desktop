@@ -243,7 +243,7 @@ class MainWindow(QMainWindow):
             }
             QProgressBar::chunk {
                 background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0.0 #107c41, stop:0.75 #107c41, stop:0.90 #ffb900, stop:1.0 #e81123);
+                    stop:0.0 #0078d4, stop:1.0 #60cdff);
                 border-radius: 3px;
             }
         """)
@@ -972,7 +972,7 @@ class MainWindow(QMainWindow):
                     }
                 """)
 
-            self.record_toggle_btn.setText("⏹   Остановить запись")
+            self.record_toggle_btn.setText("■   Остановить запись")
             self.record_toggle_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #c42b1c;
