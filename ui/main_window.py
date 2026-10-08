@@ -222,11 +222,11 @@ class MainWindow(QMainWindow):
         ctrl_layout.setContentsMargins(12, 10, 12, 10)
         ctrl_layout.setSpacing(6)
 
-        # Графический индикатор активности микрофона (ТЗ п. 3)
+        # Графический индикатор уровня звука (VU-метр)
         level_row = QHBoxLayout()
         level_row.setSpacing(10)
-        level_lbl = QLabel("Микрофон:")
-        level_lbl.setFixedWidth(90)
+        level_lbl = QLabel("Уровень звука:")
+        level_lbl.setFixedWidth(105)
         level_row.addWidget(level_lbl)
 
         self.level_bar = QProgressBar()
@@ -234,6 +234,7 @@ class MainWindow(QMainWindow):
         self.level_bar.setValue(0)
         self.level_bar.setTextVisible(False)
         self.level_bar.setFixedHeight(12)
+        self.level_bar.setToolTip("Индикатор входящего сигнала громкости с микрофона")
         self.level_bar.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #3f3f46;
@@ -254,7 +255,7 @@ class MainWindow(QMainWindow):
         bottom_row.setSpacing(10)
 
         timer_title = QLabel("Длительность:")
-        timer_title.setFixedWidth(90)
+        timer_title.setFixedWidth(105)
         bottom_row.addWidget(timer_title)
 
         self.timer_label = QLabel("00:00:00")
