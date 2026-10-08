@@ -265,19 +265,10 @@ class MainWindow(QMainWindow):
 
         bottom_row.addStretch()
 
-        # Кнопка паузы (Windows 11 Secondary Button)
-        self.pause_btn = QPushButton("⏸   Пауза")
-        self.pause_btn.setMinimumHeight(34)
-        self.pause_btn.setMinimumWidth(110)
-        self.pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.pause_btn.clicked.connect(self._toggle_pause)
-        self.pause_btn.setVisible(False)
-        bottom_row.addWidget(self.pause_btn)
-
         # Кнопка старта / остановки записи (Windows 11 Fluent Button)
         self.record_toggle_btn = QPushButton("▶   Запустить запись")
         self.record_toggle_btn.setMinimumHeight(34)
-        self.record_toggle_btn.setMinimumWidth(190)
+        self.record_toggle_btn.setMinimumWidth(210)
         self.record_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.record_toggle_btn.clicked.connect(self._toggle_recording)
         self._update_record_button_ui(is_recording=False)
@@ -861,11 +852,7 @@ class MainWindow(QMainWindow):
 
     def _update_record_time(self) -> None:
         if self.recorder and self.recorder.is_recording:
-            if getattr(self.recorder, 'is_paused', False):
-                return
-            paused_total = getattr(self.recorder, 'total_paused_time', 0.0)
-            elapsed = int(datetime.now().timestamp() - self.recorder.start_time - paused_total)
-            elapsed = max(0, elapsed)
+            elapsed = int(datetime.now().timestamp() - self.recorder.start_time)
             hours = elapsed // 3600
             mins = (elapsed % 3600) // 60
             secs = elapsed % 60
@@ -878,100 +865,9 @@ class MainWindow(QMainWindow):
         else:
             self._manual_start_recording()
 
-    def _toggle_pause(self) -> None:
-        """Переключает паузу записи (Windows 11 Fluent)."""
-        if not self.recorder or not self.recorder.is_recording:
-            return
-        if self.recorder.is_paused:
-            self.recorder.resume_recording()
-            self._set_status_text("Запись возобновлена")
-            self._update_record_button_ui(is_recording=True, is_paused=False)
-        else:
-            self.recorder.pause_recording()
-            self._set_status_text("Запись приостановлена (пауза)")
-            self._update_record_button_ui(is_recording=True, is_paused=True)
-
-    def _update_record_button_ui(self, is_recording: bool, is_paused: bool = False) -> None:
-        """Переключает внешний вид кнопок управления, таймера и шкалы в стиле Windows 11 Fluent UI."""
-        if hasattr(self, 'pause_btn'):
-            self.pause_btn.setVisible(is_recording)
-
+    def _update_record_button_ui(self, is_recording: bool) -> None:
+        """Переключает внешний вид единой кнопки записи, таймера и шкалы в стиле Windows 11 Fluent UI."""
         if is_recording:
-            if is_paused:
-                if hasattr(self, 'pause_btn'):
-                    self.pause_btn.setText("▶   Возобновить")
-                    self.pause_btn.setStyleSheet("""
-                        QPushButton {
-                            background-color: #38311e;
-                            color: #fde047;
-                            font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, sans-serif;
-                            font-size: 13px;
-                            font-weight: 600;
-                            border-radius: 6px;
-                            padding: 6px 16px;
-                            border: 1px solid rgba(253, 224, 71, 0.35);
-                        }
-                        QPushButton:hover {
-                            background-color: #4a4128;
-                            border-color: rgba(253, 224, 71, 0.55);
-                            color: #ffffff;
-                        }
-                        QPushButton:pressed {
-                            background-color: #292416;
-                        }
-                    """)
-                self.timer_label.setStyleSheet("""
-                    QLabel {
-                        background-color: #2b2518;
-                        color: #fde047;
-                        font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Cascadia Mono', monospace;
-                        font-size: 15px;
-                        font-weight: 600;
-                        padding: 4px 16px;
-                        border-radius: 6px;
-                        border: 1px solid rgba(253, 224, 71, 0.35);
-                    }
-                """)
-                if hasattr(self, 'level_bar'):
-                    self.level_bar.setValue(0)
-            else:
-                if hasattr(self, 'pause_btn'):
-                    self.pause_btn.setText("⏸   Пауза")
-                    self.pause_btn.setStyleSheet("""
-                        QPushButton {
-                            background-color: #2d2d2d;
-                            color: #f3f3f3;
-                            font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, sans-serif;
-                            font-size: 13px;
-                            font-weight: 600;
-                            border-radius: 6px;
-                            padding: 6px 16px;
-                            border: 1px solid rgba(255, 255, 255, 0.09);
-                            border-top: 1px solid rgba(255, 255, 255, 0.15);
-                        }
-                        QPushButton:hover {
-                            background-color: #383838;
-                            border-color: rgba(255, 255, 255, 0.22);
-                            color: #ffffff;
-                        }
-                        QPushButton:pressed {
-                            background-color: #242424;
-                            border-color: rgba(255, 255, 255, 0.06);
-                        }
-                    """)
-                self.timer_label.setStyleSheet("""
-                    QLabel {
-                        background-color: #2c1d20;
-                        color: #ff99a4;
-                        font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Cascadia Mono', monospace;
-                        font-size: 15px;
-                        font-weight: 600;
-                        padding: 4px 16px;
-                        border-radius: 6px;
-                        border: 1px solid rgba(232, 17, 35, 0.40);
-                    }
-                """)
-
             self.record_toggle_btn.setText("■   Остановить запись")
             self.record_toggle_btn.setStyleSheet("""
                 QPushButton {
@@ -992,6 +888,18 @@ class MainWindow(QMainWindow):
                 QPushButton:pressed {
                     background-color: #a82315;
                     border-color: rgba(255, 255, 255, 0.08);
+                }
+            """)
+            self.timer_label.setStyleSheet("""
+                QLabel {
+                    background-color: #2c1d20;
+                    color: #ff99a4;
+                    font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Cascadia Mono', monospace;
+                    font-size: 15px;
+                    font-weight: 600;
+                    padding: 4px 16px;
+                    border-radius: 6px;
+                    border: 1px solid rgba(232, 17, 35, 0.40);
                 }
             """)
         else:
@@ -1039,9 +947,6 @@ class MainWindow(QMainWindow):
                 self.level_bar.setValue(0)
 
     def _on_audio_level(self, level: float) -> None:
-        if self.recorder and getattr(self.recorder, 'is_paused', False):
-            self.level_bar.setValue(0)
-            return
         percent = int(level * 100)
         self.level_bar.setValue(percent)
 
