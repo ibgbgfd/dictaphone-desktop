@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         ctrl_layout.setContentsMargins(12, 10, 12, 10)
         ctrl_layout.setSpacing(6)
 
-        # Графический индикатор уровня звука (VU-метр)
+        # Графический индикатор уровня звука (Windows 11 Fluent VU-метр)
         level_row = QHBoxLayout()
         level_row.setSpacing(10)
         level_lbl = QLabel("Уровень звука:")
@@ -233,24 +233,24 @@ class MainWindow(QMainWindow):
         self.level_bar.setRange(0, 100)
         self.level_bar.setValue(0)
         self.level_bar.setTextVisible(False)
-        self.level_bar.setFixedHeight(12)
+        self.level_bar.setFixedHeight(8)
         self.level_bar.setToolTip("Индикатор входящего сигнала громкости с микрофона")
         self.level_bar.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #3f3f46;
-                border-radius: 3px;
-                background-color: #27272a;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 4px;
+                background-color: #202020;
             }
             QProgressBar::chunk {
                 background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #22c55e, stop:0.7 #84cc16, stop:0.85 #eab308, stop:1.0 #ef4444);
-                border-radius: 2px;
+                    stop:0.0 #107c41, stop:0.75 #107c41, stop:0.90 #ffb900, stop:1.0 #e81123);
+                border-radius: 3px;
             }
         """)
         level_row.addWidget(self.level_bar, 1)
         ctrl_layout.addLayout(level_row)
 
-        # Таймер и кнопка управления записью
+        # Таймер и кнопки управления записью (Windows 11 Fluent Design)
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(10)
 
@@ -265,10 +265,19 @@ class MainWindow(QMainWindow):
 
         bottom_row.addStretch()
 
-        # Единая кнопка старта и остановки записи
+        # Кнопка паузы (Windows 11 Secondary Button)
+        self.pause_btn = QPushButton("⏸   Пауза")
+        self.pause_btn.setMinimumHeight(34)
+        self.pause_btn.setMinimumWidth(110)
+        self.pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pause_btn.clicked.connect(self._toggle_pause)
+        self.pause_btn.setVisible(False)
+        bottom_row.addWidget(self.pause_btn)
+
+        # Кнопка старта / остановки записи (Windows 11 Fluent Button)
         self.record_toggle_btn = QPushButton("▶   Запустить запись")
         self.record_toggle_btn.setMinimumHeight(34)
-        self.record_toggle_btn.setMinimumWidth(210)
+        self.record_toggle_btn.setMinimumWidth(190)
         self.record_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.record_toggle_btn.clicked.connect(self._toggle_recording)
         self._update_record_button_ui(is_recording=False)
@@ -852,7 +861,11 @@ class MainWindow(QMainWindow):
 
     def _update_record_time(self) -> None:
         if self.recorder and self.recorder.is_recording:
-            elapsed = int(datetime.now().timestamp() - self.recorder.start_time)
+            if getattr(self.recorder, 'is_paused', False):
+                return
+            paused_total = getattr(self.recorder, 'total_paused_time', 0.0)
+            elapsed = int(datetime.now().timestamp() - self.recorder.start_time - paused_total)
+            elapsed = max(0, elapsed)
             hours = elapsed // 3600
             mins = (elapsed % 3600) // 60
             secs = elapsed % 60
@@ -865,83 +878,170 @@ class MainWindow(QMainWindow):
         else:
             self._manual_start_recording()
 
-    def _update_record_button_ui(self, is_recording: bool) -> None:
-        """Переключает внешний вид и состояние единой кнопки и таймера в общей темной стилистике."""
+    def _toggle_pause(self) -> None:
+        """Переключает паузу записи (Windows 11 Fluent)."""
+        if not self.recorder or not self.recorder.is_recording:
+            return
+        if self.recorder.is_paused:
+            self.recorder.resume_recording()
+            self._set_status_text("Запись возобновлена")
+            self._update_record_button_ui(is_recording=True, is_paused=False)
+        else:
+            self.recorder.pause_recording()
+            self._set_status_text("Запись приостановлена (пауза)")
+            self._update_record_button_ui(is_recording=True, is_paused=True)
+
+    def _update_record_button_ui(self, is_recording: bool, is_paused: bool = False) -> None:
+        """Переключает внешний вид кнопок управления, таймера и шкалы в стиле Windows 11 Fluent UI."""
+        if hasattr(self, 'pause_btn'):
+            self.pause_btn.setVisible(is_recording)
+
         if is_recording:
+            if is_paused:
+                if hasattr(self, 'pause_btn'):
+                    self.pause_btn.setText("▶   Возобновить")
+                    self.pause_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #38311e;
+                            color: #fde047;
+                            font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, sans-serif;
+                            font-size: 13px;
+                            font-weight: 600;
+                            border-radius: 6px;
+                            padding: 6px 16px;
+                            border: 1px solid rgba(253, 224, 71, 0.35);
+                        }
+                        QPushButton:hover {
+                            background-color: #4a4128;
+                            border-color: rgba(253, 224, 71, 0.55);
+                            color: #ffffff;
+                        }
+                        QPushButton:pressed {
+                            background-color: #292416;
+                        }
+                    """)
+                self.timer_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #2b2518;
+                        color: #fde047;
+                        font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Cascadia Mono', monospace;
+                        font-size: 15px;
+                        font-weight: 600;
+                        padding: 4px 16px;
+                        border-radius: 6px;
+                        border: 1px solid rgba(253, 224, 71, 0.35);
+                    }
+                """)
+                if hasattr(self, 'level_bar'):
+                    self.level_bar.setValue(0)
+            else:
+                if hasattr(self, 'pause_btn'):
+                    self.pause_btn.setText("⏸   Пауза")
+                    self.pause_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #2d2d2d;
+                            color: #f3f3f3;
+                            font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, sans-serif;
+                            font-size: 13px;
+                            font-weight: 600;
+                            border-radius: 6px;
+                            padding: 6px 16px;
+                            border: 1px solid rgba(255, 255, 255, 0.09);
+                            border-top: 1px solid rgba(255, 255, 255, 0.15);
+                        }
+                        QPushButton:hover {
+                            background-color: #383838;
+                            border-color: rgba(255, 255, 255, 0.22);
+                            color: #ffffff;
+                        }
+                        QPushButton:pressed {
+                            background-color: #242424;
+                            border-color: rgba(255, 255, 255, 0.06);
+                        }
+                    """)
+                self.timer_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #2c1d20;
+                        color: #ff99a4;
+                        font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Cascadia Mono', monospace;
+                        font-size: 15px;
+                        font-weight: 600;
+                        padding: 4px 16px;
+                        border-radius: 6px;
+                        border: 1px solid rgba(232, 17, 35, 0.40);
+                    }
+                """)
+
             self.record_toggle_btn.setText("⏹   Остановить запись")
             self.record_toggle_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #2e1c20;
-                    color: #fca5a5;
-                    font-family: 'Segoe UI', -apple-system, sans-serif;
+                    background-color: #c42b1c;
+                    color: #ffffff;
+                    font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, sans-serif;
                     font-size: 13px;
                     font-weight: 600;
-                    border-radius: 5px;
+                    border-radius: 6px;
                     padding: 6px 18px;
-                    border: 1px solid #dc2626;
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    border-top: 1px solid rgba(255, 255, 255, 0.25);
                 }
                 QPushButton:hover {
-                    background-color: #7f1d1d;
-                    color: #ffffff;
-                    border: 1px solid #ef4444;
+                    background-color: #d83b2a;
+                    border-color: rgba(255, 255, 255, 0.30);
                 }
                 QPushButton:pressed {
-                    background-color: #450a0a;
-                    color: #fca5a5;
-                }
-            """)
-            self.timer_label.setStyleSheet("""
-                QLabel {
-                    background-color: #2e1c20;
-                    color: #fca5a5;
-                    font-family: 'Consolas', 'Cascadia Code', monospace;
-                    font-size: 15px;
-                    font-weight: bold;
-                    padding: 4px 14px;
-                    border-radius: 5px;
-                    border: 1px solid #dc2626;
+                    background-color: #a82315;
+                    border-color: rgba(255, 255, 255, 0.08);
                 }
             """)
         else:
             self.record_toggle_btn.setText("▶   Запустить запись")
             self.record_toggle_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #1f2c24;
-                    color: #86efac;
-                    font-family: 'Segoe UI', -apple-system, sans-serif;
+                    background-color: #0078d4;
+                    color: #ffffff;
+                    font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, sans-serif;
                     font-size: 13px;
                     font-weight: 600;
-                    border-radius: 5px;
+                    border-radius: 6px;
                     padding: 6px 18px;
-                    border: 1px solid #16a34a;
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    border-top: 1px solid rgba(255, 255, 255, 0.25);
                 }
                 QPushButton:hover {
-                    background-color: #14532d;
-                    color: #ffffff;
-                    border: 1px solid #22c55e;
+                    background-color: #1084d9;
+                    border-color: rgba(255, 255, 255, 0.32);
                 }
                 QPushButton:pressed {
-                    background-color: #052e16;
-                    color: #86efac;
+                    background-color: #0067b8;
+                    border-color: rgba(255, 255, 255, 0.08);
+                }
+                QPushButton:disabled {
+                    background-color: #2a2a2a;
+                    color: #666666;
+                    border: 1px solid rgba(255, 255, 255, 0.05);
                 }
             """)
             self.timer_label.setText("00:00:00")
             self.timer_label.setStyleSheet("""
                 QLabel {
-                    background-color: #2b2b2b;
-                    color: #e4e4e7;
-                    font-family: 'Consolas', 'Cascadia Code', monospace;
+                    background-color: #262626;
+                    color: #ffffff;
+                    font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Cascadia Mono', monospace;
                     font-size: 15px;
-                    font-weight: bold;
-                    padding: 4px 14px;
-                    border-radius: 5px;
-                    border: 1px solid #3f3f46;
+                    font-weight: 600;
+                    padding: 4px 16px;
+                    border-radius: 6px;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
                 }
             """)
             if hasattr(self, 'level_bar'):
                 self.level_bar.setValue(0)
 
     def _on_audio_level(self, level: float) -> None:
+        if self.recorder and getattr(self.recorder, 'is_paused', False):
+            self.level_bar.setValue(0)
+            return
         percent = int(level * 100)
         self.level_bar.setValue(percent)
 
@@ -1009,11 +1109,54 @@ class MainWindow(QMainWindow):
 
             folder_btn = QPushButton("Папка")
             folder_btn.setToolTip("Показать файл в папке на диске")
+            folder_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2d2d2d;
+                    color: #d4d4d4;
+                    font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+                    font-size: 12px;
+                    border-radius: 5px;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    padding: 3px 8px;
+                }
+                QPushButton:hover {
+                    background-color: #383838;
+                    color: #ffffff;
+                    border-color: rgba(255, 255, 255, 0.16);
+                }
+                QPushButton:pressed {
+                    background-color: #242424;
+                }
+            """)
             folder_btn.clicked.connect(lambda _, fp=rec['filepath']: self._show_in_folder(fp))
             action_layout.addWidget(folder_btn)
 
             retry_btn = QPushButton("Повторить отправку")
             retry_btn.setToolTip("Повторно отправить запись WebM и JSON на сервер")
+            retry_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2d2d2d;
+                    color: #d4d4d4;
+                    font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+                    font-size: 12px;
+                    border-radius: 5px;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    padding: 3px 8px;
+                }
+                QPushButton:hover {
+                    background-color: #383838;
+                    color: #ffffff;
+                    border-color: rgba(255, 255, 255, 0.16);
+                }
+                QPushButton:pressed {
+                    background-color: #242424;
+                }
+                QPushButton:disabled {
+                    background-color: #1f1f1f;
+                    color: #555555;
+                    border-color: rgba(255, 255, 255, 0.04);
+                }
+            """)
 
             # Кнопка активна ТОЛЬКО для записей со статусом «Не отправлено» (ТЗ п. 3)
             if raw_status == STATUS_NOT_SENT:
@@ -1030,6 +1173,26 @@ class MainWindow(QMainWindow):
             play_btn = QPushButton("▶")
             play_btn.setToolTip("Воспроизвести запись")
             play_btn.setFixedWidth(32)
+            play_btn.setFixedHeight(26)
+            play_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2d2d2d;
+                    color: #60cdff;
+                    font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border-radius: 5px;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                }
+                QPushButton:hover {
+                    background-color: #0078d4;
+                    color: #ffffff;
+                    border-color: #0078d4;
+                }
+                QPushButton:pressed {
+                    background-color: #005a9e;
+                }
+            """)
             play_btn.clicked.connect(lambda _, fp=rec['filepath']: self._play_audio(fp))
             action_layout.addWidget(play_btn)
 

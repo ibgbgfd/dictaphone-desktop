@@ -218,6 +218,8 @@ class AudioRecorder:
             self.is_paused = False
             self.start_time = time.time()
             self.elapsed_time = 0.0
+            self.total_paused_time = 0.0
+            self._pause_start = 0.0
 
             # Start background encoding worker thread
             self._record_thread = threading.Thread(target=self._encode_worker, daemon=True)
@@ -327,12 +329,36 @@ class AudioRecorder:
         except Exception as e:
             print(f"[AudioRecorder] Chunk encoding error: {e}")
 
+    def pause_recording(self) -> None:
+        """Приостанавливает запись звука."""
+        if self.is_recording and not self.is_paused:
+            self.is_paused = True
+            self._pause_start = time.time()
+            if self.on_level:
+                try:
+                    self.on_level(0.0)
+                except Exception:
+                    pass
+
+    def resume_recording(self) -> None:
+        """Возобновляет запись звука."""
+        if self.is_recording and self.is_paused:
+            if getattr(self, '_pause_start', 0.0) > 0:
+                self.total_paused_time = getattr(self, 'total_paused_time', 0.0) + (time.time() - self._pause_start)
+                self._pause_start = 0.0
+            self.is_paused = False
+
     def stop_recording(self) -> float:
         if not self.is_recording:
             return 0.0
 
+        if self.is_paused and getattr(self, '_pause_start', 0.0) > 0:
+            self.total_paused_time = getattr(self, 'total_paused_time', 0.0) + (time.time() - self._pause_start)
+            self.is_paused = False
+
         self.is_recording = False
-        duration = time.time() - self.start_time
+        duration = (time.time() - self.start_time) - getattr(self, 'total_paused_time', 0.0)
+        duration = max(0.0, duration)
         self.elapsed_time = duration
 
         # Stop audio hardware input
