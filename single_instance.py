@@ -88,7 +88,7 @@ class SingleInstanceManager(QObject):
         if sys.platform == "win32":
             try:
                 user32 = ctypes.windll.user32
-                hwnd = user32.FindWindowW(None, "Аудиорекордер — Диктофон совещаний")
+                hwnd = user32.FindWindowW(None, "Аудиорекордер — Диктофон мероприятий")
                 if hwnd:
                     user32.ShowWindow(hwnd, 9)  # SW_RESTORE
                     user32.SetForegroundWindow(hwnd)

@@ -44,9 +44,9 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
             self._send_json_response(200, {
                 "status": "ok",
                 "code": 200,
-                "service": "Диктофон REST API",
+                "service": "Диктофон API",
                 "endpoints": {
-                    "POST /start": "Запуск записи (передача JSON метаданных совещания)",
+                    "POST /start": "Запуск записи (передача JSON метаданных мероприятия)",
                     "POST /stop": "Остановка текущей записи",
                     "GET /status": "Проверка текущего статуса рекордера",
                     "POST /show": "Разворачивание окна диктофона из трея"
@@ -120,7 +120,7 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                     "status": "error",
                     "code": 400,
                     "error": "EMPTY_BODY",
-                    "message": "Тело запроса пустое. Отправьте JSON пакет с обязательными полями 'id' (идентификатор) и 'title' (название конференции/совещания).",
+                    "message": "Тело запроса пустое. Отправьте JSON пакет с обязательными полями 'id' (идентификатор) и 'title' (название мероприятия).",
                     "example": EXAMPLE_SESSION_PAYLOAD
                 })
                 return
@@ -230,8 +230,8 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                         "missing_fields": missing_fields,
                         "message": err_msg,
                         "required_fields": {
-                            "id": "Идентификатор сессии/конференции (например: 'совещание_312')",
-                            "title": "Название конференции или тема совещания (например: 'Обсуждение архитектуры проекта')"
+                            "id": "Идентификатор мероприятия (например: 'мероприятие_312')",
+                            "title": "Название или тема мероприятия (например: 'Обсуждение архитектуры проекта')"
                         },
                         "example": EXAMPLE_SESSION_PAYLOAD
                     })

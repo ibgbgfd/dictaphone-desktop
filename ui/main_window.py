@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QListWidget, QSplitter
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
-from PyQt6.QtGui import QIcon, QAction, QColor
+from PyQt6.QtGui import QIcon, QAction, QColor, QPainter, QPainterPath
 
 from config import AppConfig, load_config, save_config
 from database import Database, STATUS_SENT, STATUS_NOT_SENT, STATUS_IN_PROGRESS
@@ -34,10 +34,59 @@ class RecorderBridge(QObject):
     show_requested = pyqtSignal()
 
 
+class PlayButton(QPushButton):
+    """Кнопка воспроизведения с четким векторным треугольником (без шрифтовых артефактов)."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setToolTip("Воспроизвести запись")
+        self.setFixedWidth(32)
+        self.setFixedHeight(26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: #2d2d2d;
+                border-radius: 5px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            QPushButton:hover {
+                background-color: #0078d4;
+                border-color: #0078d4;
+            }
+            QPushButton:pressed {
+                background-color: #005a9e;
+            }
+        """)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        color = QColor("#ffffff") if (self.isDown() or self.underMouse()) else QColor("#60cdff")
+        painter.setBrush(color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+        w = 9.0
+        h = 10.0
+        x_left = cx - w * 0.4
+        x_right = cx + w * 0.6
+        y_top = cy - h / 2.0
+        y_bottom = cy + h / 2.0
+        
+        path = QPainterPath()
+        path.moveTo(x_left, y_top)
+        path.lineTo(x_right, cy)
+        path.lineTo(x_left, y_bottom)
+        path.closeSubpath()
+        painter.drawPath(path)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Аудиорекордер — Диктофон совещаний")
+        self.setWindowTitle("Аудиорекордер — Диктофон мероприятий")
         self.resize(920, 680)
 
         # Конфигурация и база данных
@@ -90,7 +139,7 @@ class MainWindow(QMainWindow):
         )
         srv_ok = self.server.start()
         if srv_ok:
-            self._set_status_text("Ожидание REST запросов")
+            self._set_status_text("Ожидание данных мероприятия")
         else:
             self._set_status_text(f"Ошибка запуска HTTP сервера на порту {self.config.http_port}")
 
@@ -118,25 +167,26 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(8)
 
-        # Панель управления верхняя (Тестовая загрузка + Настройки)
-        top_bar = QHBoxLayout()
-        top_bar.setSpacing(8)
+        # Табы: 1) Текущая запись, 2) История
+        self.tab_widget = QTabWidget()
 
-        self.load_json_btn = QPushButton("Загрузить JSON...")
-        self.load_json_btn.setToolTip("Тестовая загрузка пакета совещания из файла JSON")
+        # Кнопки на одной линии со вкладками (в правом углу панели вкладок)
+        corner_widget = QWidget()
+        corner_layout = QHBoxLayout(corner_widget)
+        corner_layout.setContentsMargins(0, 0, 4, 2)
+        corner_layout.setSpacing(6)
+
+        self.load_json_btn = QPushButton("Загрузить JSON")
+        self.load_json_btn.setToolTip("Тестовая загрузка пакета мероприятия из файла JSON")
         self.load_json_btn.clicked.connect(self._load_json_file)
 
         self.settings_btn = QPushButton("Настройки")
         self.settings_btn.clicked.connect(self._open_settings)
 
-        top_bar.addStretch()
-        top_bar.addWidget(self.load_json_btn)
-        top_bar.addWidget(self.settings_btn)
+        corner_layout.addWidget(self.load_json_btn)
+        corner_layout.addWidget(self.settings_btn)
 
-        main_layout.addLayout(top_bar)
-
-        # Табы: 1) Текущая запись / Совещание, 2) История записей
-        self.tab_widget = QTabWidget()
+        self.tab_widget.setCornerWidget(corner_widget, Qt.Corner.TopRightCorner)
         main_layout.addWidget(self.tab_widget, 1)
 
         # ===============================================================
@@ -148,7 +198,7 @@ class MainWindow(QMainWindow):
         tab1_layout.setSpacing(8)
 
         # Блок общей информации о текущей записи (title и date из ТЗ)
-        meta_group = QGroupBox("Информация о текущей сессии")
+        meta_group = QGroupBox("Информация о мероприятии")
         meta_layout = QVBoxLayout(meta_group)
         meta_layout.setSpacing(6)
 
@@ -158,28 +208,24 @@ class MainWindow(QMainWindow):
         title_lbl.setFixedWidth(80)
         title_row.addWidget(title_lbl)
         self.title_input = QLineEdit()
-        self.title_input.setPlaceholderText("Ожидание данных совещания из REST API...")
+        self.title_input.setPlaceholderText("Ожидание данных мероприятия")
         title_row.addWidget(self.title_input, 1)
         meta_layout.addLayout(title_row)
 
-        # Строка Дата и ID
-        date_id_row = QHBoxLayout()
+        # Строка Дата
+        date_row = QHBoxLayout()
         date_lbl = QLabel("Дата и время:")
         date_lbl.setFixedWidth(80)
-        date_id_row.addWidget(date_lbl)
+        date_row.addWidget(date_lbl)
         self.date_input = QLineEdit()
         self.date_input.setPlaceholderText("—")
-        date_id_row.addWidget(self.date_input, 1)
+        date_row.addWidget(self.date_input, 1)
 
-        id_lbl = QLabel("ID сессии:")
-        id_lbl.setFixedWidth(60)
-        date_id_row.addWidget(id_lbl)
+        # ID скрыт от пользователя
         self.id_input = QLineEdit()
-        self.id_input.setPlaceholderText("—")
-        self.id_input.setFixedWidth(200)
-        date_id_row.addWidget(self.id_input)
+        self.id_input.setVisible(False)
 
-        meta_layout.addLayout(date_id_row)
+        meta_layout.addLayout(date_row)
         tab1_layout.addWidget(meta_group)
 
         # Сплиттер для Участников и Повестки дня (ТЗ п. 3)
@@ -318,12 +364,12 @@ class MainWindow(QMainWindow):
         self.history_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         hist_layout.addWidget(self.history_table, 1)
 
-        self.tab_widget.addTab(history_tab, "История записей")
+        self.tab_widget.addTab(history_tab, "История")
 
         # Статус-бар
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self._set_status_text("Ожидание подключения")
+        self._set_status_text("Ожидание данных мероприятия")
 
     def _setup_tray(self) -> None:
         """Системный трей по ТЗ п. 3: сворачивание крестиком, разворачивание по двойному клику."""
@@ -447,7 +493,7 @@ class MainWindow(QMainWindow):
             is_recording_func=self._is_recording_active
         )
         self.server.start()
-        self._set_status_text("Ожидание REST запросов")
+        self._set_status_text("Ожидание данных мероприятия")
 
     # ===============================================================
     # Обработка входящего REST JSON (Старт сессии и запись)
@@ -507,7 +553,7 @@ class MainWindow(QMainWindow):
         self._show_window()
 
         self.tray_icon.showMessage(
-            "Входящая сессия (REST API)",
+            "Входящие данные мероприятия",
             f"{title}\nЗапись звука запущена автоматически.",
             QSystemTrayIcon.MessageIcon.Information,
             4000
@@ -527,7 +573,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Запись активна",
-                "Невозможно загрузить новую сессию во время активной записи аудио.\n\n"
+                "Невозможно загрузить данные мероприятия во время активной записи аудио.\n\n"
                 "Сначала остановите текущую запись кнопкой «Остановить запись»."
             )
             return
@@ -538,7 +584,7 @@ class MainWindow(QMainWindow):
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Выберите файл сессии (JSON)",
+            "Выберите файл мероприятия (JSON)",
             start_path,
             "JSON файлы (*.json);;Все файлы (*.*)"
         )
@@ -564,7 +610,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Пустой файл",
                 "Выбранный JSON файл пуст.\n\n"
-                "Укажите корректный файл совещания с обязательными полями 'id' и 'title'."
+                "Укажите корректный файл мероприятия с обязательными полями 'id' и 'title'."
             )
             return
 
@@ -586,7 +632,7 @@ class MainWindow(QMainWindow):
             example_str = json.dumps(EXAMPLE_SESSION_PAYLOAD, ensure_ascii=False, indent=2)
             QMessageBox.critical(
                 self,
-                "Ошибка валидации сессии",
+                "Ошибка валидации мероприятия",
                 f"{err_msg}\n\n"
                 f"Пример корректного формата JSON:\n{example_str}"
             )
@@ -604,7 +650,7 @@ class MainWindow(QMainWindow):
         now = datetime.now()
         title = self.title_input.text().strip()
         if not title:
-            title = f"Совещание от {now.strftime('%d.%m.%Y %H:%M')}"
+            title = f"Мероприятие от {now.strftime('%d.%m.%Y %H:%M')}"
             self.title_input.setText(title)
 
         date_val = self.date_input.text().strip()
@@ -614,7 +660,7 @@ class MainWindow(QMainWindow):
 
         id_val = self.id_input.text().strip()
         if not id_val:
-            id_val = f"совещание_{now.strftime('%Y%m%d_%H%M%S')}"
+            id_val = f"мероприятие_{now.strftime('%Y%m%d_%H%M%S')}"
             self.id_input.setText(id_val)
 
         self.pending_session_id = id_val
@@ -774,7 +820,7 @@ class MainWindow(QMainWindow):
         else:
             if rec_id:
                 self.db.update_recording(rec_id, status=STATUS_NOT_SENT)
-            self._set_status_text("Ожидание подключения")
+            self._set_status_text("Ожидание данных мероприятия")
             self._refresh_history()
 
     # ===============================================================
@@ -1075,29 +1121,7 @@ class MainWindow(QMainWindow):
 
             action_layout.addWidget(retry_btn)
 
-            play_btn = QPushButton("▶")
-            play_btn.setToolTip("Воспроизвести запись")
-            play_btn.setFixedWidth(32)
-            play_btn.setFixedHeight(26)
-            play_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #2d2d2d;
-                    color: #60cdff;
-                    font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
-                    font-size: 12px;
-                    font-weight: bold;
-                    border-radius: 5px;
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                }
-                QPushButton:hover {
-                    background-color: #0078d4;
-                    color: #ffffff;
-                    border-color: #0078d4;
-                }
-                QPushButton:pressed {
-                    background-color: #005a9e;
-                }
-            """)
+            play_btn = PlayButton()
             play_btn.clicked.connect(lambda _, fp=rec['filepath']: self._play_audio(fp))
             action_layout.addWidget(play_btn)
 

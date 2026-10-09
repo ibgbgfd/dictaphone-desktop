@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 EXAMPLE_SESSION_PAYLOAD = {
-    "id": "совещание_312",
+    "id": "мероприятие_312",
     "title": "Обсуждение архитектуры проекта",
     "date": "28/09/2026 12:15",
     "participants": [
@@ -24,13 +24,13 @@ EXAMPLE_SESSION_PAYLOAD = {
 
 def validate_session_data(data: Any) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]], List[str]]:
     """
-    Валидирует и нормализует JSON-пакет сессии совещания.
+    Валидирует и нормализует JSON-пакет данных мероприятия.
     
     Проверяет:
     1. Корневой элемент должен быть объектом (dict).
     2. Объект не должен быть пустым {}.
-    3. Наличие и непустоту 'id' (идентификатор сессии/конференции).
-    4. Наличие и непустоту 'title' (название конференции/совещания).
+    3. Наличие и непустоту 'id' (идентификатор мероприятия).
+    4. Наличие и непустоту 'title' (название мероприятия).
        Поддерживает дружелюбные синонимы ('conference', 'name', 'topic').
     5. Корректность типов полей (не допускает dict/list в id и title).
     6. Безопасную нормализацию 'date', 'participants' и 'agenda'.
@@ -44,7 +44,7 @@ def validate_session_data(data: Any) -> Tuple[bool, Optional[str], Optional[Dict
         return False, msg, None, []
 
     if not data:
-        msg = "Передан пустой JSON объект {}. Заполните обязательные поля: 'id' (идентификатор) и 'title' (название конференции/совещания)."
+        msg = "Передан пустой JSON объект {}. Заполните обязательные поля: 'id' (идентификатор) и 'title' (название мероприятия)."
         return False, msg, None, ["id", "title"]
 
     missing_fields: List[str] = []
@@ -90,9 +90,9 @@ def validate_session_data(data: Any) -> Tuple[bool, Optional[str], Optional[Dict
         fields_desc = []
         for f in missing_fields:
             if f == "id":
-                fields_desc.append("'id' (идентификатор конференции)")
+                fields_desc.append("'id' (идентификатор мероприятия)")
             elif f == "title":
-                fields_desc.append("'title' (название конференции/совещания)")
+                fields_desc.append("'title' (название мероприятия)")
             else:
                 fields_desc.append(f"'{f}'")
 

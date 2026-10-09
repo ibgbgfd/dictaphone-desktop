@@ -72,41 +72,22 @@ class SettingsDialog(QDialog):
         gen_layout.addStretch()
         self.tabs.addTab(general_tab, "Основные")
 
-        # Tab 2: Сеть и сервер (HTTP REST API / HTTP POST)
+        # Tab 2: Сеть и сервер (HTTP / POST)
         net_tab = QWidget()
         net_layout = QVBoxLayout(net_tab)
         net_layout.setSpacing(10)
 
-        # HTTP REST Server group
-        http_group = QGroupBox("Входящие данные сессий (HTTP REST API)")
+        # HTTP Server group
+        http_group = QGroupBox("Порт")
         http_layout = QVBoxLayout(http_group)
-        
-        http_host_row = QHBoxLayout()
-        http_host_row.addWidget(QLabel("Хост (0.0.0.0 или 127.0.0.1):"))
-        self.http_host_input = QLineEdit()
-        self.http_host_input.textChanged.connect(self._update_curl_info)
-        http_host_row.addWidget(self.http_host_input, 1)
-        http_layout.addLayout(http_host_row)
 
         http_port_row = QHBoxLayout()
-        http_port_row.addWidget(QLabel("Локальный HTTP REST порт:"))
+        http_port_row.addWidget(QLabel("Порт:"))
         self.http_port_spin = QSpinBox()
         self.http_port_spin.setRange(1024, 65535)
-        self.http_port_spin.valueChanged.connect(self._update_curl_info)
         http_port_row.addWidget(self.http_port_spin)
         http_port_row.addStretch()
         http_layout.addLayout(http_port_row)
-
-        curl_box = QVBoxLayout()
-        curl_box.addWidget(QLabel("Команда curl для запуска записи:"))
-        self.curl_info = QLineEdit()
-        self.curl_info.setReadOnly(True)
-        curl_box.addWidget(self.curl_info)
-
-        copy_btn = QPushButton("Скопировать команду curl")
-        copy_btn.clicked.connect(self._copy_curl_command)
-        curl_box.addWidget(copy_btn)
-        http_layout.addLayout(curl_box)
 
         net_layout.addWidget(http_group)
 
@@ -152,7 +133,7 @@ class SettingsDialog(QDialog):
         mic_layout = QVBoxLayout(mic_group)
         mic_layout.setSpacing(8)
 
-        mic_label = QLabel("Активный микрофон для записи совещаний:")
+        mic_label = QLabel("Активный микрофон для записи мероприятий:")
         mic_layout.addWidget(mic_label)
 
         mic_row = QHBoxLayout()
@@ -217,7 +198,6 @@ class SettingsDialog(QDialog):
         self.dir_input.setText(self.config.recordings_dir)
         self.days_spin.setValue(self.config.max_storage_days)
         
-        self.http_host_input.setText(self.config.http_host)
         self.http_port_spin.setValue(self.config.http_port)
         self.auto_upload_check.setChecked(getattr(self.config, 'auto_upload', True))
         self.upload_url_input.setText(self.config.upload_url)
@@ -240,7 +220,6 @@ class SettingsDialog(QDialog):
         self._load_devices()
 
         self._update_protocol_badge()
-        self._update_curl_info()
 
     def _load_devices(self) -> None:
         self.device_combo.blockSignals(True)
@@ -281,16 +260,6 @@ class SettingsDialog(QDialog):
                 "background-color: #451a03; color: #fdba74; border: 1px solid #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;"
             )
 
-    def _update_curl_info(self) -> None:
-        port = self.http_port_spin.value()
-        host = self.http_host_input.text().strip() or "127.0.0.1"
-        self.curl_info.setText(f'curl.exe -X POST "http://{host}:{port}/start" -H "Content-Type: application/json; charset=utf-8" -d \'@data.json\'')
-
-    def _copy_curl_command(self) -> None:
-        from PyQt6.QtWidgets import QApplication
-        cmd = self.curl_info.text()
-        QApplication.clipboard().setText(cmd)
-        QMessageBox.information(self, "Скопировано", f"Команда curl скопирована в буфер обмена:\n\n{cmd}")
 
     def _browse_dir(self) -> None:
         curr = self.dir_input.text()
@@ -318,7 +287,6 @@ class SettingsDialog(QDialog):
         self.config.max_storage_days = self.days_spin.value()
 
         # Network
-        self.config.http_host = self.http_host_input.text().strip() or "0.0.0.0"
         self.config.http_port = self.http_port_spin.value()
         self.config.auto_upload = self.auto_upload_check.isChecked()
         self.config.upload_url = self.upload_url_input.text().strip()
