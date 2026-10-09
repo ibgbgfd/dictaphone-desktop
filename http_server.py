@@ -47,9 +47,9 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                 "service": "Диктофон API",
                 "endpoints": {
                     "POST /start": "Запуск записи (передача JSON метаданных мероприятия)",
-                    "POST /stop": "Остановка текущей записи",
+                    "GET /stop": "Остановка текущей записи",
                     "GET /status": "Проверка текущего статуса рекордера",
-                    "POST /show": "Разворачивание окна диктофона из трея"
+                    "GET /show": "Разворачивание окна диктофона из трея"
                 }
             })
             return
@@ -64,9 +64,24 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
             })
             return
 
+        if normalized_path in ("/stop", "/api/stop"):
+            is_currently_recording = self.server.wrapper.is_recording_func()
+            if self.server.wrapper.on_stop_requested:
+                self.server.wrapper.on_stop_requested()
+            print("[REST API] Получена команда остановки записи (GET /stop)")
+            self._send_json_response(200, {
+                "status": "ok",
+                "code": 200,
+                "is_recording": False,
+                "was_recording": is_currently_recording,
+                "message": "Команда остановки записи успешно выполнена" if is_currently_recording else "Запись звука не была активна (рекордер в режиме ожидания)"
+            })
+            return
+
         if normalized_path in ("/show", "/api/show"):
             if self.server.wrapper.on_show_requested:
                 self.server.wrapper.on_show_requested()
+            print("[REST API] Получена команда разворачивания окна (GET /show)")
             self._send_json_response(200, {
                 "status": "ok",
                 "code": 200,
@@ -78,7 +93,7 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
             "status": "error",
             "code": 404,
             "error": "NOT_FOUND",
-            "message": f"Эндпоинт {self.path} не найден. Используйте /start, /stop или /status"
+            "message": f"Эндпоинт {self.path} не найден. Используйте POST /start, GET /stop, GET /show или GET /status"
         })
 
     def do_POST(self):
@@ -87,29 +102,22 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
             if not normalized_path:
                 normalized_path = "/"
 
-            # 1. Быстрая проверка команд остановки записи и показа окна по URL (не требуют обязательного тела)
+            # Команды stop и show теперь поддерживаются исключительно через GET
             if normalized_path in ("/stop", "/api/stop"):
-                is_currently_recording = self.server.wrapper.is_recording_func()
-                if self.server.wrapper.on_stop_requested:
-                    self.server.wrapper.on_stop_requested()
-                print("[REST API] Получена команда остановки записи (POST /stop)")
-                self._send_json_response(200, {
-                    "status": "ok",
-                    "code": 200,
-                    "is_recording": False,
-                    "was_recording": is_currently_recording,
-                    "message": "Команда остановки записи успешно выполнена" if is_currently_recording else "Запись звука не была активна (рекордер в режиме ожидания)"
+                self._send_json_response(405, {
+                    "status": "error",
+                    "code": 405,
+                    "error": "METHOD_NOT_ALLOWED",
+                    "message": "Метод POST не поддерживается для остановки записи. Команда доступна только через GET /stop."
                 })
                 return
 
             if normalized_path in ("/show", "/api/show"):
-                if self.server.wrapper.on_show_requested:
-                    self.server.wrapper.on_show_requested()
-                print("[REST API] Получена команда разворачивания окна (POST /show)")
-                self._send_json_response(200, {
-                    "status": "ok",
-                    "code": 200,
-                    "message": "Окно диктофона развернуто на передний план"
+                self._send_json_response(405, {
+                    "status": "error",
+                    "code": 405,
+                    "error": "METHOD_NOT_ALLOWED",
+                    "message": "Метод POST не поддерживается для разворачивания окна. Команда доступна только через GET /show."
                 })
                 return
 
@@ -182,27 +190,20 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
 
             # 2. Проверка команд через JSON body {"command": "stop"} или {"command": "show"}
             if data.get("command") == "stop" or data.get("action") == "stop":
-                is_currently_recording = self.server.wrapper.is_recording_func()
-                if self.server.wrapper.on_stop_requested:
-                    self.server.wrapper.on_stop_requested()
-                print("[REST API] Получена команда остановки записи (через JSON payload)")
-                self._send_json_response(200, {
-                    "status": "ok",
-                    "code": 200,
-                    "is_recording": False,
-                    "was_recording": is_currently_recording,
-                    "message": "Команда остановки записи успешно выполнена" if is_currently_recording else "Запись звука не была активна (рекордер в режиме ожидания)"
+                self._send_json_response(405, {
+                    "status": "error",
+                    "code": 405,
+                    "error": "METHOD_NOT_ALLOWED",
+                    "message": "Команда остановки записи через POST устарела. Используйте HTTP запрос GET /stop."
                 })
                 return
 
             if data.get("command") == "show" or data.get("action") == "show":
-                if self.server.wrapper.on_show_requested:
-                    self.server.wrapper.on_show_requested()
-                print("[REST API] Получена команда разворачивания окна (через JSON payload)")
-                self._send_json_response(200, {
-                    "status": "ok",
-                    "code": 200,
-                    "message": "Окно диктофона развернуто на передний план"
+                self._send_json_response(405, {
+                    "status": "error",
+                    "code": 405,
+                    "error": "METHOD_NOT_ALLOWED",
+                    "message": "Команда разворачивания окна через POST устарела. Используйте HTTP запрос GET /show."
                 })
                 return
 
@@ -246,7 +247,7 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                         "status_code": 409,
                         "error": "RECORDER_BUSY",
                         "active_recording": True,
-                        "message": "Сервер занят: в данный момент уже идет сессия записи аудио. Отправьте POST /stop для завершения текущей сессии перед началом новой."
+                        "message": "Сервер занят: в данный момент уже идет сессия записи аудио. Отправьте GET /stop для завершения текущей сессии перед началом новой."
                     })
                     return
 
@@ -274,7 +275,7 @@ class DictaphoneHTTPHandler(BaseHTTPRequestHandler):
                 "status": "error",
                 "code": 404,
                 "error": "NOT_FOUND",
-                "message": f"Неизвестный POST эндпоинт: '{self.path}'. Используйте POST /start для старта сессии или POST /stop для остановки."
+                "message": f"Неизвестный POST эндпоинт: '{self.path}'. Используйте POST /start для старта сессии или GET /stop для остановки."
             })
 
         except Exception as e:
@@ -317,8 +318,9 @@ class RESTServer:
     Легковесный многопоточный HTTP REST сервер для управления диктофоном.
     Заменяет WebSocket:
     - POST /start  : передать JSON метаданных совещания и начать запись
-    - POST /stop   : остановить текущую запись
+    - GET  /stop   : остановить текущую запись
     - GET  /status : проверить статус записи
+    - GET  /show   : развернуть окно диктофона из трея
     """
     def __init__(
         self,
@@ -376,7 +378,9 @@ class RESTServer:
         self.is_running = False
         if self._server:
             try:
-                self._server.shutdown()
+                shutdown_thread = threading.Thread(target=self._server.shutdown, daemon=True)
+                shutdown_thread.start()
+                shutdown_thread.join(timeout=1.0)
                 self._server.server_close()
             except Exception as e:
                 print(f"[REST Server] Ошибка остановки сервера: {e}")

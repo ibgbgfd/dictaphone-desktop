@@ -402,8 +402,12 @@ class MainWindow(QMainWindow):
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
 
-    def _on_tray_activated(self, reason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+    def _on_tray_activated(self, reason=None) -> None:
+        try:
+            # Двойной (2) или одинарный (3) клик разворачивает окно приложения
+            if reason in (QSystemTrayIcon.ActivationReason.DoubleClick, QSystemTrayIcon.ActivationReason.Trigger, 2, 3):
+                self._show_window()
+        except Exception:
             self._show_window()
 
     def _show_window(self) -> None:
@@ -431,6 +435,26 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def cleanup(self) -> None:
+        """Безопасная остановка всех фоновых процессов и освобождение ресурсов."""
+        try:
+            if self.recorder and self.recorder.is_recording:
+                self._stop_recording()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, 'server') and self.server:
+                self.server.stop()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, 'tray_icon') and self.tray_icon:
+                self.tray_icon.hide()
+        except Exception:
+            pass
+
     def _force_quit(self) -> None:
         if self.recorder and self.recorder.is_recording:
             reply = QMessageBox.question(
@@ -443,12 +467,10 @@ class MainWindow(QMainWindow):
                 return
             self._stop_recording()
 
-        if hasattr(self, 'server') and self.server:
-            self.server.stop()
-
-        self.tray_icon.hide()
+        self.cleanup()
         self.close()
-        sys.exit(0)
+        from PyQt6.QtWidgets import QApplication
+        QApplication.quit()
 
     def closeEvent(self, event) -> None:
         if self.config.minimize_to_tray:
@@ -461,10 +483,7 @@ class MainWindow(QMainWindow):
                 1500
             )
         else:
-            if self.recorder and self.recorder.is_recording:
-                self._stop_recording()
-            if hasattr(self, 'ws_server') and self.ws_server:
-                self.ws_server.stop()
+            self.cleanup()
             event.accept()
 
     def _open_settings(self) -> None:

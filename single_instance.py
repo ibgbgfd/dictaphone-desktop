@@ -76,10 +76,10 @@ class SingleInstanceManager(QObject):
         except Exception:
             pass
 
-        # Канал 2: Локальный HTTP REST эндпоинт /show
+        # Канал 2: Локальный HTTP REST эндпоинт /show (GET)
         try:
             import requests
-            requests.post("http://127.0.0.1:8765/show", timeout=0.8)
+            requests.get("http://127.0.0.1:8765/show", timeout=0.8)
             return
         except Exception:
             pass

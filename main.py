@@ -1,5 +1,6 @@
 import sys
 import os
+import signal
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -13,7 +14,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from ui.main_window import MainWindow
 from single_instance import SingleInstanceManager
 
@@ -42,6 +43,43 @@ def main():
     window = MainWindow()
     single_instance.message_received.connect(lambda msg: window.bring_to_front() if msg == "show" else None)
 
+    # Функция централизованной безопасной очистки ресурсов
+    cleaned_up = False
+    def cleanup_resources():
+        nonlocal cleaned_up
+        if cleaned_up:
+            return
+        cleaned_up = True
+        try:
+            window.cleanup()
+        except Exception as ex:
+            print(f"[Dictaphone] Ошибка при очистке ресурсов окна: {ex}")
+        try:
+            single_instance.close()
+        except Exception as ex:
+            print(f"[Dictaphone] Ошибка при закрытии single_instance: {ex}")
+
+    # Подключаем очистку ко времени выхода QApplication
+    app.aboutToQuit.connect(cleanup_resources)
+
+    # Обработчик сигнала Ctrl+C (SIGINT / SIGTERM)
+    def handle_sigint(signum, frame):
+        print("\n[Dictaphone] Получен сигнал прерывания (Ctrl+C). Корректное завершение работы...")
+        cleanup_resources()
+        app.quit()
+
+    try:
+        signal.signal(signal.SIGINT, handle_sigint)
+        signal.signal(signal.SIGTERM, handle_sigint)
+    except Exception as e:
+        print(f"[Dictaphone] Не удалось настроить обработчик сигналов: {e}")
+
+    # Периодический таймер для возврата управления в виртуальную машину Python.
+    # В Windows/PyQt без этого таймера C++ цикл обработки событий блокирует вызов сигналов Python!
+    sig_timer = QTimer()
+    sig_timer.timeout.connect(lambda: None)
+    sig_timer.start(200)
+
     if not window.config.start_minimized:
         window.bring_to_front()
     else:
@@ -52,13 +90,19 @@ def main():
             2000
         )
 
-    exit_code = app.exec()
-    single_instance.close()
+    try:
+        exit_code = app.exec()
+    finally:
+        cleanup_resources()
+
     sys.exit(exit_code)
 
 if __name__ == "__main__":
     try:
         main()
+    except KeyboardInterrupt:
+        print("\n[Dictaphone] Приложение корректно завершено пользователем.")
+        sys.exit(0)
     except Exception as e:
         import traceback
         try:
